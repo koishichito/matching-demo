@@ -78,6 +78,18 @@ export async function fetchNearby(input: {
   return data.items;
 }
 
+export async function fetchProposals(userId: string): Promise<{ incoming: Proposal[]; outgoing: Proposal[] }> {
+  const params = new URLSearchParams({ userId });
+  const response = await fetch(`/api/proposals?${params.toString()}`);
+  return parseJson<{ incoming: Proposal[]; outgoing: Proposal[] }>(response);
+}
+
+export async function fetchMatchesForUser(userId: string): Promise<Match[]> {
+  const params = new URLSearchParams({ userId });
+  const response = await fetch(`/api/matches?${params.toString()}`);
+  const data = await parseJson<{ items: Match[] }>(response);
+  return data.items;
+}
 export async function postProposal(from: string, to: string): Promise<Proposal> {
   const response = await fetch("/api/proposals", {
     method: "POST",
@@ -160,3 +172,4 @@ async function parseJson<T>(response: Response): Promise<T> {
   }
   return data as T;
 }
+

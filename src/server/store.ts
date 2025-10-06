@@ -145,6 +145,34 @@ export function listNearby(input: {
   return results;
 }
 
+export function listProposalsForUser(userId: string): { incoming: Proposal[]; outgoing: Proposal[] } {
+  const store = getStore();
+  const incoming: Proposal[] = [];
+  const outgoing: Proposal[] = [];
+  for (const proposal of store.proposals.values()) {
+    if (proposal.to === userId) {
+      incoming.push(proposal);
+    }
+    if (proposal.from === userId) {
+      outgoing.push(proposal);
+    }
+  }
+  incoming.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  outgoing.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  return { incoming, outgoing };
+}
+
+export function listMatchesForUser(userId: string): Match[] {
+  const store = getStore();
+  const results: Match[] = [];
+  for (const match of store.matches.values()) {
+    if (match.userA === userId || match.userB === userId) {
+      results.push(match);
+    }
+  }
+  results.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  return results;
+}
 export function createProposal(from: string, to: string): Proposal {
   const store = getStore();
   if (from === to) {
@@ -334,46 +362,46 @@ function seedDemoUsers(store: InMemoryStore) {
     {
       id: "demo-aya",
       nickname: "Aya",
-      tags: ["Wine", "Open to new people"],
-      bio: "Exploring wine bars in Ebisu. Happy to swap recommendations.",
-      vibe: "Relaxed conversation",
-      budget: "JPY 5k-7k",
+      tags: ["静かに飲みたい", "新しい出会い歓迎"],
+      bio: "恵比寿のワインバーを開拓中。おすすめを交換しましょう。",
+      vibe: "ゆったり",
+      budget: "5000〜7000円",
       presetKey: "ebisu",
     },
     {
       id: "demo-ryo",
       nickname: "Ryo",
-      tags: ["Highball", "Live music"],
-      bio: "Just left a gig in Shibuya. Down for one more drink.",
-      vibe: "Lively and fun",
-      budget: "Up to JPY 3k",
+      tags: ["サクッと一杯", "はしご酒"],
+      bio: "渋谷でライブ帰り。もう一杯どうですか。",
+      vibe: "にぎやか",
+      budget: "3000円未満",
       presetKey: "shibuya",
     },
     {
       id: "demo-sara",
       nickname: "Sara",
-      tags: ["Craft beer", "English OK"],
-      bio: "Around Roppongi Hills. Would love an international chat.",
-      vibe: "Calm bar setting",
-      budget: "JPY 4k-6k",
+      tags: ["英語でOK", "旅の話がしたい"],
+      bio: "六本木ヒルズ周辺にいます。海外のおしゃべりができる人歓迎。",
+      vibe: "静かなバー",
+      budget: "5000〜7000円",
       presetKey: "roppongi",
     },
     {
       id: "demo-daichi",
       nickname: "Daichi",
-      tags: ["Whisky", "Work talk"],
-      bio: "Wrapping up meetings in Ginza. Up for a quick debrief.",
-      vibe: "Slow and thoughtful",
-      budget: "JPY 7k-10k",
+      tags: ["仕事の話歓迎", "静かに飲みたい"],
+      bio: "銀座で打ち合わせ終わり。軽く振り返りませんか。",
+      vibe: "ゆったり",
+      budget: "7000円以上",
       presetKey: "ginza",
     },
     {
       id: "demo-hina",
       nickname: "Hina",
-      tags: ["Sake", "Travel"],
-      bio: "Visiting Kyoto. Looking for local hidden spots.",
-      vibe: "Laid-back",
-      budget: "Up to JPY 4k",
+      tags: ["旅の話がしたい", "じっくり会話"],
+      bio: "京都を旅行中。地元の穴場を教えてください。",
+      vibe: "カジュアル",
+      budget: "3000〜5000円",
       presetKey: "kyoto",
     },
   ];
@@ -437,7 +465,4 @@ function createMatchInternal(store: InMemoryStore, userA: string, userB: string)
   store.matches.set(match.id, match);
   return match;
 }
-
-
-
 

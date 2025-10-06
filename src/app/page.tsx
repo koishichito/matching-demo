@@ -17,6 +17,8 @@ import {
   fetchLocationPresets,
   fetchMessages,
   fetchNearby,
+  fetchProposals,
+  fetchMatchesForUser,
   fetchUser,
   postMessage,
   postPresence,
@@ -40,26 +42,40 @@ const DEFAULT_RADIUS_KM = 3;
 const RADIUS_CHOICES = [2, 3, 5, 10];
 
 const TAG_OPTIONS = [
-  "Quick drink",
-  "Deep conversation",
-  "New connections welcome",
-  "English friendly",
-  "Bar hopping",
-  "Work talk",
-  "Travel stories",
-  "Quiet night",
+  "サクッと一杯",
+  "じっくり会話",
+  "新しい出会い歓迎",
+  "英語でOK",
+  "はしご酒",
+  "仕事の話歓迎",
+  "旅の話がしたい",
+  "静かに飲みたい",
 ];
 
-const VIBE_OPTIONS = ["Lively", "Relaxed", "With music", "Casual hang", "Quiet bar"];
+const VIBE_OPTIONS = ["にぎやか", "ゆったり", "音楽あり", "カジュアル", "静かなバー"];
 
-const BUDGET_OPTIONS = ["Under JPY 3k", "JPY 3k-5k", "JPY 5k-7k", "JPY 7k+"];
+const BUDGET_OPTIONS = ["3000円未満", "3000〜5000円", "5000〜7000円", "7000円以上"];
 
 const REPORT_REASONS = [
-  "Inappropriate behavior",
-  "Profile issue",
-  "Spam or solicitation",
-  "Other",
+  "不適切な行為",
+  "プロフィールの問題",
+  "迷惑・勧誘行為",
+  "その他",
 ];
+
+const WS_STATUS_LABELS = {
+  idle: "未接続",
+  connecting: "接続中",
+  connected: "接続済み",
+  closed: "切断",
+} as const;
+
+const WS_RETRY_INTERVAL_MS = 15_000;
+const FALLBACK_POLL_INTERVAL_MS = 8_000;
+const SCORE_TOOLTIP = "距離と共通タグから計算した参考スコアです";
+const DISTANCE_LABEL_UNDER_100M = "100m未満";
+const REALTIME_FALLBACK_MESSAGE = "リアルタイム接続に失敗したため自動更新モードに切り替えました";
+
 
 type OnboardingResult = {
   nickname: string;
@@ -79,7 +95,7 @@ type ReportPayload = {
 
 function formatDistance(distanceKm: number) {
   if (Number.isNaN(distanceKm)) return "-";
-  if (distanceKm < 0.1) return "under 100m";
+  if (distanceKm < 0.1) return DISTANCE_LABEL_UNDER_100M;
   if (distanceKm < 1) return Math.round(distanceKm * 1000) + "m";
   return distanceKm.toFixed(1) + "km";
 }
@@ -105,6 +121,7 @@ export default function Page() {
   const [isPresenceLoading, setIsPresenceLoading] = useState(false);
   const [isNearbyLoading, setIsNearbyLoading] = useState(false);
   const [wsStatus, setWsStatus] = useState<"idle" | "connecting" | "connected" | "closed">("idle");
+  const [realtimeMode, setRealtimeMode] = useState<"ws" | "polling">("ws");
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [onboardingInitial, setOnboardingInitial] = useState<SessionSnapshot | null>(null);
   const [reportTarget, setReportTarget] = useState<{ matchId: string; peerId: string } | null>(null);
@@ -112,6 +129,8 @@ export default function Page() {
   const pendingUserFetch = useRef(new Set<string>());
   const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const wsReconnectTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const wsUrl = useMemo(() => {
     if (typeof window === "undefined") return null;
@@ -229,6 +248,63 @@ export default function Page() {
     [session?.userId]
   );
 
+  const refreshRealtimeSnapshot = useCallback(
+    async () => {
+      if (!user) return;
+      try {
+        const [proposalData, matchList] = await Promise.all([
+          fetchProposals(user.id),
+          fetchMatchesForUser(user.id),
+        ]);
+        const incomingMap: ProposalMap = {};
+        const outgoingMap: ProposalMap = {};
+        proposalData.incoming.forEach((proposal) => {
+          incomingMap[proposal.id] = proposal;
+        });
+        proposalData.outgoing.forEach((proposal) => {
+          outgoingMap[proposal.id] = proposal;
+        });
+        setIncomingProposals(incomingMap);
+        setOutgoingProposals(outgoingMap);
+        const matchMap: Record<string, Match> = {};
+        matchList.forEach((match) => {
+          matchMap[match.id] = match;
+          ensureUser(match.userA);
+          ensureUser(match.userB);
+        });
+        setMatches(matchMap);
+        const peerIds = new Set<string>();
+        proposalData.incoming.forEach((proposal) => peerIds.add(proposal.from));
+        proposalData.outgoing.forEach((proposal) => peerIds.add(proposal.to));
+        peerIds.forEach((id) => ensureUser(id));
+        if (activeMatchId && matchMap[activeMatchId]) {
+          const latestMessages = await fetchMessages(activeMatchId);
+          setMessages((prev) => ({ ...prev, [activeMatchId]: latestMessages }));
+        }
+      } catch (error) {
+        console.error("Failed to refresh realtime snapshot", error);
+      }
+    },
+    [activeMatchId, ensureUser, user]
+  );
+  const requestWebSocketReconnect = useCallback(() => {
+    if (wsReconnectTimerRef.current) {
+      clearTimeout(wsReconnectTimerRef.current);
+      wsReconnectTimerRef.current = null;
+    }
+    setRealtimeMode("ws");
+  }, []);
+
+  const switchToPolling = useCallback(
+    (message?: string) => {
+      if (realtimeMode !== "polling" && message) {
+        setBanner((current) => current ?? message);
+      }
+      setRealtimeMode("polling");
+      setWsStatus("closed");
+    },
+    [realtimeMode, setBanner]
+  );
   const refreshNearby = useCallback(
     async (targetSession?: SessionSnapshot) => {
       const ctx = targetSession ?? session;
@@ -253,7 +329,7 @@ export default function Page() {
           return next;
         });
       } catch (error) {
-        setBanner(error instanceof Error ? error.message : "Failed to load nearby list");
+        setBanner(error instanceof Error ? error.message : "近隣リストの取得に失敗しました");
       } finally {
         setIsNearbyLoading(false);
       }
@@ -290,7 +366,7 @@ export default function Page() {
           ensureUser(event.payload.from);
           if (event.payload.to === session?.userId) {
             setIncomingProposals((prev) => ({ ...prev, [event.payload.id]: event.payload }));
-            setToast("New meetup proposal received");
+            setToast("新しい提案が届きました");
           } else if (event.payload.from === session?.userId) {
             setOutgoingProposals((prev) => ({ ...prev, [event.payload.id]: event.payload }));
           }
@@ -339,7 +415,13 @@ export default function Page() {
           setMessages((prev) => {
             const next = { ...prev };
             const arr = next[event.payload.matchId] ? [...next[event.payload.matchId]] : [];
-            arr.push(event.payload);
+            const existingIndex = arr.findIndex((item) => item.id === event.payload.id);
+            if (existingIndex >= 0) {
+              arr[existingIndex] = event.payload;
+            } else {
+              arr.push(event.payload);
+              arr.sort((a, b) => new Date(a.sentAt).getTime() - new Date(b.sentAt).getTime());
+            }
             next[event.payload.matchId] = arr;
             return next;
           });
@@ -352,7 +434,7 @@ export default function Page() {
           setMatches({});
           setMessages({});
           setActiveMatchId(null);
-          setToast("Presence reset");
+          setToast("プレゼンスをリセットしました");
           refreshNearby();
           break;
         }
@@ -361,20 +443,23 @@ export default function Page() {
     [session?.userId, activeMatchId, ensureUser, refreshNearby, scheduleNearbyRefresh]
   );
   useEffect(() => {
-    if (!session?.userId || !wsUrl) return;
+    if (!session?.userId || !wsUrl || realtimeMode !== "ws") return;
     setWsStatus("connecting");
     const socket = new WebSocket(wsUrl);
     wsRef.current = socket;
-    socket.onopen = () => setWsStatus("connected");
+    socket.onopen = () => {
+      setWsStatus("connected");
+      refreshRealtimeSnapshot();
+    };
     socket.onclose = () => {
-      setWsStatus("closed");
       if (wsRef.current === socket) {
         wsRef.current = null;
       }
+      switchToPolling(REALTIME_FALLBACK_MESSAGE);
     };
     socket.onerror = (error) => {
       console.error("WebSocket error", error);
-      setWsStatus("closed");
+      switchToPolling(REALTIME_FALLBACK_MESSAGE);
     };
     socket.onmessage = (event) => {
       try {
@@ -385,10 +470,61 @@ export default function Page() {
       }
     };
     return () => {
+      if (wsRef.current === socket) {
+        wsRef.current = null;
+      }
       socket.close();
     };
-  }, [session?.userId, wsUrl, handleBroadcast]);
+  }, [handleBroadcast, realtimeMode, refreshRealtimeSnapshot, session?.userId, switchToPolling, wsUrl]);
 
+  useEffect(() => {
+    if (realtimeMode !== "polling" || !session?.userId) {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
+      return;
+    }
+
+    const tick = async () => {
+      await refreshNearby();
+      await refreshRealtimeSnapshot();
+    };
+
+    tick();
+    pollingIntervalRef.current = setInterval(tick, FALLBACK_POLL_INTERVAL_MS);
+
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
+    };
+  }, [refreshNearby, refreshRealtimeSnapshot, realtimeMode, session?.userId]);
+
+  useEffect(() => {
+    if (realtimeMode !== "polling") {
+      if (wsReconnectTimerRef.current) {
+        clearTimeout(wsReconnectTimerRef.current);
+        wsReconnectTimerRef.current = null;
+      }
+      return;
+    }
+    if (wsReconnectTimerRef.current) return;
+    wsReconnectTimerRef.current = setTimeout(() => {
+      requestWebSocketReconnect();
+    }, WS_RETRY_INTERVAL_MS);
+    return () => {
+      if (wsReconnectTimerRef.current) {
+        clearTimeout(wsReconnectTimerRef.current);
+        wsReconnectTimerRef.current = null;
+      }
+    };
+  }, [realtimeMode, requestWebSocketReconnect]);
+  useEffect(() => {
+    if (!session?.userId || !user) return;
+    refreshRealtimeSnapshot();
+  }, [refreshRealtimeSnapshot, session?.userId, user]);
   useEffect(() => {
     if (session?.location) {
       refreshNearby(session);
@@ -463,14 +599,14 @@ export default function Page() {
             locationLabel: session.location.label,
           });
           setSelfPresence(presence);
-          setToast("Presence turned on");
+          setToast("プレゼンスをONにしました");
         } else {
           await deletePresence(user.id);
           setSelfPresence(null);
-          setToast("Presence turned off");
+          setToast("プレゼンスをOFFにしました");
         }
       } catch (error) {
-        setBanner(error instanceof Error ? error.message : "Failed to update presence");
+        setBanner(error instanceof Error ? error.message : "プレゼンスの更新に失敗しました");
       } finally {
         setIsPresenceLoading(false);
       }
@@ -484,9 +620,9 @@ export default function Page() {
       try {
         const proposal = await postProposal(user.id, targetUserId);
         setOutgoingProposals((prev) => ({ ...prev, [proposal.id]: proposal }));
-        setToast("Proposal sent");
+        setToast("提案を送信しました");
       } catch (error) {
-        setBanner(error instanceof Error ? error.message : "Failed to send proposal");
+        setBanner(error instanceof Error ? error.message : "提案の送信に失敗しました");
       }
     },
     [user]
@@ -504,9 +640,9 @@ export default function Page() {
           delete next[proposalId];
           return next;
         });
-        setToast("Proposal accepted");
+        setToast("提案を承諾しました");
       } catch (error) {
-        setBanner(error instanceof Error ? error.message : "Failed to accept proposal");
+        setBanner(error instanceof Error ? error.message : "提案の承諾に失敗しました");
       }
     },
     [user]
@@ -520,12 +656,18 @@ export default function Page() {
         setMessages((prev) => {
           const next = { ...prev };
           const arr = next[activeMatchId] ? [...next[activeMatchId]] : [];
-          arr.push(message);
+          const existingIndex = arr.findIndex((item) => item.id === message.id);
+          if (existingIndex >= 0) {
+            arr[existingIndex] = message;
+          } else {
+            arr.push(message);
+            arr.sort((a, b) => new Date(a.sentAt).getTime() - new Date(b.sentAt).getTime());
+          }
           next[activeMatchId] = arr;
           return next;
         });
       } catch (error) {
-        setBanner(error instanceof Error ? error.message : "Failed to send message");
+        setBanner(error instanceof Error ? error.message : "メッセージの送信に失敗しました");
       }
     },
     [activeMatchId, user]
@@ -534,9 +676,9 @@ export default function Page() {
   const handleReset = useCallback(async () => {
     try {
       await postReset();
-      setToast("Manual reset triggered");
+      setToast("手動リセットを実行しました");
     } catch (error) {
-      setBanner(error instanceof Error ? error.message : "Failed to reset");
+      setBanner(error instanceof Error ? error.message : "リセットに失敗しました");
     }
   }, []);
 
@@ -550,10 +692,10 @@ export default function Page() {
           reason: payload.reason,
           details: payload.details,
         });
-        setToast("Report submitted");
+        setToast("通報を送信しました");
         setReportTarget(null);
       } catch (error) {
-        setBanner(error instanceof Error ? error.message : "Failed to submit report");
+        setBanner(error instanceof Error ? error.message : "通報の送信に失敗しました");
       }
     },
     [reportTarget, user]
@@ -574,20 +716,38 @@ export default function Page() {
         <header className="flex flex-col gap-2 rounded-2xl bg-slate-900/70 p-5 backdrop-blur">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <h1 className="text-xl font-semibold text-white">JOIN US Demo</h1>
+              <h1 className="text-xl font-semibold text-white">マッチングデモ</h1>
               <p className="text-sm text-slate-300">
-                Toggle presence to appear in the nearby list. Accept each other to unlock chat.
+                プレゼンスをONにすると近くのリストに表示され、互いに承諾するとチャットが開きます。
               </p>
             </div>
-            <div className="text-right text-xs text-slate-400">
-              <div>Realtime: {wsStatus}</div>
+            <div className="text-right text-xs text-slate-400 space-y-1">
+              <div>
+                リアルタイム状態: {realtimeMode === "polling" ? "自動更新" : WS_STATUS_LABELS[wsStatus]}
+              </div>
+              {realtimeMode === "polling" && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBanner(null);
+                    requestWebSocketReconnect();
+                  }}
+                  className="rounded-full border border-emerald-500/50 px-3 py-1 text-[11px] text-emerald-300 transition hover:bg-emerald-500/10"
+                >
+                  再接続を試す
+                </button>
+              )}
               {session?.location && (
-                <div>
-                  Radius
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-slate-400" htmlFor="radius-select">
+                    検索範囲
+                  </label>
                   <select
+                    id="radius-select"
+                    aria-label="検索範囲"
                     value={radiusKm}
                     onChange={(event) => setRadiusKm(Number(event.target.value))}
-                    className="ml-1 rounded border border-slate-700 bg-slate-900 px-1 py-0.5 text-xs text-slate-200"
+                    className="rounded border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-100 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
                   >
                     {RADIUS_CHOICES.map((value) => (
                       <option key={value} value={value}>
@@ -603,7 +763,7 @@ export default function Page() {
           {session?.location && (
             <div className="flex flex-wrap items-center gap-3 text-sm text-slate-300">
               <span className="rounded-full bg-emerald-500/10 px-3 py-1 text-emerald-200">
-                {session.location.label ?? "Current location"}
+                {session.location.label ?? "現在地"}
               </span>
               <span>
                 lat {session.location.lat.toFixed(3)}, lng {session.location.lng.toFixed(3)}
@@ -619,7 +779,7 @@ export default function Page() {
               }}
               className="rounded-full bg-slate-800 px-4 py-2 text-sm transition hover:bg-slate-700"
             >
-              Edit profile
+              プロフィール編集
             </button>
             <button
               onClick={() => {
@@ -638,13 +798,13 @@ export default function Page() {
               }}
               className="rounded-full border border-slate-700 px-4 py-2 text-sm text-slate-300 transition hover:bg-slate-800"
             >
-              Reset device session
+              デバイスセッションをリセット
             </button>
             <button
               onClick={handleReset}
               className="rounded-full border border-rose-500/40 px-4 py-2 text-sm text-rose-300 transition hover:bg-rose-500/20"
             >
-              Manual reset
+              手動リセット
             </button>
           </div>
         </header>
@@ -660,9 +820,9 @@ export default function Page() {
             <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <h2 className="text-lg font-semibold text-white">Presence status</h2>
+                  <h2 className="text-lg font-semibold text-white">プレゼンス状態</h2>
                   <p className="text-sm text-slate-300">
-                    Stay in the list while presence is on. Turn off to disappear immediately.
+                    プレゼンスをONにしている間はリストに表示されます。OFFにするとすぐに非表示になります。
                   </p>
                 </div>
                 <button
@@ -675,13 +835,13 @@ export default function Page() {
                       : "bg-slate-800 text-slate-200 hover:bg-slate-700 disabled:bg-slate-800/60"
                   )}
                 >
-                  {selfPresence ? "Presence ON" : "Presence OFF"}
+                  {selfPresence ? "プレゼンス ON" : "プレゼンス OFF"}
                 </button>
               </div>
               {selfPresence && (
                 <div className="mt-4 flex flex-wrap gap-3 text-xs text-slate-300">
-                  <span>Started: {new Date(selfPresence.since).toLocaleTimeString()}</span>
-                  <span>Expiry: {new Date(selfPresence.expiresAt).toLocaleTimeString()}</span>
+                  <span>開始: {new Date(selfPresence.since).toLocaleTimeString()}</span>
+                  <span>有効期限: {new Date(selfPresence.expiresAt).toLocaleTimeString()}</span>
                 </div>
               )}
             </div>
@@ -810,7 +970,7 @@ function OnboardingModal({ open, presets, initial, onClose, onComplete }: Onboar
         setSelectedLocation({
           lat: Number(position.coords.latitude.toFixed(5)),
           lng: Number(position.coords.longitude.toFixed(5)),
-          label: "Current location",
+          label: "現在地",
           source: "geolocation",
         });
         setSelectedPreset("");
@@ -846,7 +1006,7 @@ function OnboardingModal({ open, presets, initial, onClose, onComplete }: Onboar
       return;
     }
     if (!nickname.trim()) {
-      setError("Nickname is required");
+      setError("ニックネームを入力してください");
       return;
     }
     if (!selectedLocation) {
@@ -864,7 +1024,7 @@ function OnboardingModal({ open, presets, initial, onClose, onComplete }: Onboar
         location: selectedLocation,
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save profile");
+      setError(err instanceof Error ? err.message : "プロフィールの保存に失敗しました");
     } finally {
       setSubmitting(false);
     }
@@ -879,10 +1039,10 @@ function OnboardingModal({ open, presets, initial, onClose, onComplete }: Onboar
         <div className="flex items-center justify-between gap-4">
           <div>
             <h2 className="text-lg font-semibold text-white">
-              {initial ? "Update profile" : "Get ready"}
+              {initial ? "プロフィールを更新" : "プロフィール設定"}
             </h2>
             <p className="text-sm text-slate-300">
-              Minimal info for this demo. Stored locally only.
+              デモで必要な最小限の情報です。データはローカルにのみ保存されます。
             </p>
           </div>
           {initial && (
@@ -890,9 +1050,7 @@ function OnboardingModal({ open, presets, initial, onClose, onComplete }: Onboar
               type="button"
               onClick={onClose}
               className="rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-300 transition hover:bg-slate-800"
-            >
-              Close
-            </button>
+            >閉じる</button>
           )}
         </div>
 
@@ -904,7 +1062,7 @@ function OnboardingModal({ open, presets, initial, onClose, onComplete }: Onboar
               onChange={(event) => setAgeConfirmed(event.target.checked)}
               className="h-4 w-4 rounded border-slate-600 bg-slate-900 text-emerald-500 focus:ring-emerald-500"
             />
-            <span>I confirm I am over 20 and will use this demo responsibly.</span>
+            <span>20歳以上であり、このデモを適切に利用することを確認します。</span>
           </label>
 
           <div className="space-y-2">
@@ -914,7 +1072,7 @@ function OnboardingModal({ open, presets, initial, onClose, onComplete }: Onboar
             <input
               value={nickname}
               onChange={(event) => setNickname(event.target.value)}
-              placeholder="Example: Aya"
+              placeholder="例: あや"
               className="w-full rounded-xl border border-slate-800 bg-slate-950 px-4 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
             />
           </div>
@@ -954,7 +1112,7 @@ function OnboardingModal({ open, presets, initial, onClose, onComplete }: Onboar
                 onChange={(event) => setVibe(event.target.value)}
                 className="w-full rounded-xl border border-slate-800 bg-slate-950 px-4 py-2 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
               >
-                <option value="">Not set</option>
+                <option value="">未設定</option>
                 {VIBE_OPTIONS.map((value) => (
                   <option key={value} value={value}>
                     {value}
@@ -971,7 +1129,7 @@ function OnboardingModal({ open, presets, initial, onClose, onComplete }: Onboar
                 onChange={(event) => setBudget(event.target.value)}
                 className="w-full rounded-xl border border-slate-800 bg-slate-950 px-4 py-2 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
               >
-                <option value="">Not set</option>
+                <option value="">未設定</option>
                 {BUDGET_OPTIONS.map((value) => (
                   <option key={value} value={value}>
                     {value}
@@ -1005,7 +1163,7 @@ function OnboardingModal({ open, presets, initial, onClose, onComplete }: Onboar
                 className="rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-200 transition hover:bg-slate-800 disabled:opacity-60"
                 disabled={geoStatus === "loading"}
               >
-                {geoStatus === "loading" ? "Locating..." : "Use device location"}
+                {geoStatus === "loading" ? "位置情報を取得中..." : "デバイスの位置情報を使用"}
               </button>
             </div>
 
@@ -1014,7 +1172,7 @@ function OnboardingModal({ open, presets, initial, onClose, onComplete }: Onboar
               onChange={(event) => handlePresetChange(event.target.value)}
               className="w-full rounded-xl border border-slate-800 bg-slate-950 px-4 py-2 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
             >
-              <option value="">Choose from presets</option>
+              <option value="">プリセットから選択</option>
               {presets.map((preset) => (
                 <option key={preset.key} value={preset.key}>
                   {preset.label}
@@ -1025,11 +1183,11 @@ function OnboardingModal({ open, presets, initial, onClose, onComplete }: Onboar
             {selectedLocation && (
               <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">
                 <div className="font-semibold text-emerald-100">
-                  {selectedLocation.label ?? "Current location"}
+                  {selectedLocation.label ?? "現在地"}
                 </div>
                 <div>
                   lat {selectedLocation.lat.toFixed(4)} / lng {selectedLocation.lng.toFixed(4)} (
-                  {selectedLocation.source === "manual" ? "preset" : "geolocation"})
+                  {selectedLocation.source === "manual" ? "プリセット" : "位置情報"})
                 </div>
               </div>
             )}
@@ -1048,16 +1206,14 @@ function OnboardingModal({ open, presets, initial, onClose, onComplete }: Onboar
               type="button"
               onClick={onClose}
               className="rounded-full border border-slate-700 px-4 py-2 text-sm text-slate-200 transition hover:bg-slate-800"
-            >
-              Cancel
-            </button>
+            >キャンセル</button>
           )}
           <button
             type="submit"
             disabled={submitting}
             className="rounded-full bg-emerald-500 px-5 py-2 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400 disabled:bg-emerald-500/60"
           >
-            {submitting ? "Saving..." : "Save and continue"}
+            {submitting ? "保存中..." : "保存して続ける"}
           </button>
         </div>
       </form>
@@ -1083,12 +1239,12 @@ function NearbyList({
   return (
     <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
       <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="text-lg font-semibold text-white">Nearby people</h2>
-        {loading && <span className="text-xs text-slate-400">Refreshing...</span>}
+        <h2 className="text-lg font-semibold text-white">近くのユーザー</h2>
+        {loading && <span className="text-xs text-slate-400">更新中...</span>}
       </div>
       {items.length === 0 ? (
         <p className="text-sm text-slate-400">
-          Turn presence on to appear in the list. Switch presets to simulate other locations.
+          プレゼンスをONにするとリストに表示されます。プリセットを切り替えて別エリアをシミュレートできます。
         </p>
       ) : (
         <div className="grid gap-3">
@@ -1106,8 +1262,8 @@ function NearbyList({
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <div className="text-sm font-semibold text-white">{entry.user.nickname}</div>
-                    <div className="text-xs text-slate-400">
-                      {isSelf ? "You" : formatDistance(entry.distanceKm)} · score {Math.round(entry.affinityScore)}
+                    <div className="text-xs text-slate-400" title={SCORE_TOOLTIP}>
+                      {isSelf ? "あなた" : formatDistance(entry.distanceKm)} ・ スコア {Math.round(entry.affinityScore)}
                     </div>
                   </div>
                   {!isSelf && (
@@ -1121,7 +1277,7 @@ function NearbyList({
                           : "bg-emerald-500 text-slate-950 hover:bg-emerald-400"
                       )}
                     >
-                      {outgoing ? "Sent" : "Invite"}
+                      {outgoing ? "送信済み" : "誘う"}
                     </button>
                   )}
                 </div>
@@ -1170,7 +1326,7 @@ function ProposalInbox({ incoming, outgoing, knownUsers, onAccept }: ProposalInb
 
   return (
     <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
-      <h2 className="mb-3 text-lg font-semibold text-white">Meetup proposals</h2>
+      <h2 className="mb-3 text-lg font-semibold text-white">ミートアップ提案</h2>
       <div className="space-y-4 text-sm text-slate-200">
         <div>
           <div className="mb-2 flex items-center justify-between text-xs uppercase tracking-wide text-slate-400">
@@ -1178,7 +1334,7 @@ function ProposalInbox({ incoming, outgoing, knownUsers, onAccept }: ProposalInb
             <span>{incomingList.length}</span>
           </div>
           {incomingList.length === 0 ? (
-            <p className="text-xs text-slate-500">No incoming proposals yet.</p>
+            <p className="text-xs text-slate-500">受信した提案はまだありません。</p>
           ) : (
             <div className="space-y-2">
               {incomingList.map((proposal) => {
@@ -1215,7 +1371,7 @@ function ProposalInbox({ incoming, outgoing, knownUsers, onAccept }: ProposalInb
             <span>{outgoingList.length}</span>
           </div>
           {outgoingList.length === 0 ? (
-            <p className="text-xs text-slate-500">You have not sent any proposals.</p>
+            <p className="text-xs text-slate-500">まだ提案を送信していません。</p>
           ) : (
             <div className="space-y-2">
               {outgoingList.map((proposal) => {
@@ -1234,7 +1390,7 @@ function ProposalInbox({ incoming, outgoing, knownUsers, onAccept }: ProposalInb
                       </div>
                     </div>
                     <span className="rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-400">
-                      {proposal.status === "pending" ? "Waiting" : "Matched"}
+                      {proposal.status === "pending" ? "待機中" : "マッチ済み"}
                     </span>
                   </div>
                 );
@@ -1286,7 +1442,7 @@ function ChatPanel({ match, messages, selfUserId, peer, onSend, onClose, onRepor
     <div className="flex h-full flex-col rounded-2xl border border-slate-800 bg-slate-900/60">
       <div className="flex items-center justify-between gap-3 border-b border-slate-800 px-5 py-3">
         <div>
-          <h2 className="text-sm font-semibold text-white">{peer?.nickname ?? "Chat"}</h2>
+          <h2 className="text-sm font-semibold text-white">{peer?.nickname ?? "チャット"}</h2>
           <p className="text-xs text-slate-400">
             {new Date(match.createdAt).toLocaleString()}
           </p>
@@ -1295,20 +1451,16 @@ function ChatPanel({ match, messages, selfUserId, peer, onSend, onClose, onRepor
           <button
             onClick={onReport}
             className="rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-300 transition hover:bg-slate-800"
-          >
-            Report
-          </button>
+          >通報する</button>
           <button
             onClick={onClose}
             className="rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-300 transition hover:bg-slate-800"
-          >
-            Close
-          </button>
+          >閉じる</button>
         </div>
       </div>
       <div ref={listRef} className="flex-1 space-y-3 overflow-y-auto px-5 py-4 text-sm">
         {messages.length === 0 ? (
-          <p className="text-xs text-slate-500">No messages yet.</p>
+          <p className="text-xs text-slate-500">まだメッセージはありません。</p>
         ) : (
           messages.map((message) => {
             const isSelf = message.from === selfUserId;
@@ -1337,16 +1489,14 @@ function ChatPanel({ match, messages, selfUserId, peer, onSend, onClose, onRepor
           <input
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
-            placeholder="Type a message..."
+            placeholder="メッセージを入力..."
             className="flex-1 rounded-full border border-slate-800 bg-slate-950 px-4 py-2 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
           />
           <button
             type="submit"
             disabled={!draft.trim()}
             className="rounded-full bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400 disabled:bg-emerald-500/60"
-          >
-            Send
-          </button>
+          >送信</button>
         </div>
       </form>
     </div>
@@ -1388,11 +1538,9 @@ function ReportDialog({ open, reasons, onClose, onSubmit }: ReportDialogProps) {
         onSubmit={handleSubmit}
         className="w-full max-w-md space-y-4 rounded-2xl border border-slate-800 bg-slate-900/90 p-5 text-sm text-slate-100 shadow-2xl"
       >
-        <h3 className="text-base font-semibold text-white">Report user</h3>
+        <h3 className="text-base font-semibold text-white">ユーザーを通報</h3>
         <div className="space-y-2">
-          <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-            Reason
-          </label>
+          <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">理由</label>
           <select
             value={reason}
             onChange={(event) => setReason(event.target.value)}
@@ -1406,9 +1554,7 @@ function ReportDialog({ open, reasons, onClose, onSubmit }: ReportDialogProps) {
           </select>
         </div>
         <div className="space-y-2">
-          <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-            Details (optional)
-          </label>
+          <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">詳細（任意）</label>
           <textarea
             value={details}
             onChange={(event) => setDetails(event.target.value.slice(0, 280))}
@@ -1421,20 +1567,19 @@ function ReportDialog({ open, reasons, onClose, onSubmit }: ReportDialogProps) {
             type="button"
             onClick={onClose}
             className="rounded-full border border-slate-700 px-4 py-2 text-xs text-slate-300 transition hover:bg-slate-800"
-          >
-            Close
-          </button>
+          >閉じる</button>
           <button
             type="submit"
             disabled={submitting}
             className="rounded-full bg-rose-500 px-4 py-2 text-xs font-semibold text-slate-950 transition hover:bg-rose-400 disabled:bg-rose-500/60"
           >
-            {submitting ? "Submitting..." : "Submit"}
+            {submitting ? "送信中..." : "送信する"}
           </button>
         </div>
       </form>
     </div>
   );
 }
+
 
 

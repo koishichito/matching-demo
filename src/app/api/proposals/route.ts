@@ -1,7 +1,17 @@
 import { NextResponse } from "next/server";
-import { createProposal } from "@/server/store";
+import { createProposal, listProposalsForUser } from "@/server/store";
 
 export const runtime = "nodejs";
+
+export async function GET(request: Request) {
+  const url = new URL(request.url);
+  const userId = url.searchParams.get("userId");
+  if (!userId || userId.trim() === "") {
+    return NextResponse.json({ error: "userId is required" }, { status: 400 });
+  }
+  const data = listProposalsForUser(userId.trim());
+  return NextResponse.json(data);
+}
 
 export async function POST(request: Request) {
   try {
