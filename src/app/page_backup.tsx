@@ -711,13 +711,13 @@ export default function Page() {
   const peerProfile = peerId ? knownUsers[peerId] : undefined;
   const activeMessages = activeMatchId ? messages[activeMatchId] ?? [] : [];
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-100 dark:bg-slate-950 text-gray-900 dark:text-slate-100">
+    <div className="min-h-screen bg-slate-950 text-slate-100">
       <div className="mx-auto flex min-h-screen max-w-5xl flex-col gap-6 px-4 pb-16 pt-6">
-        <header className="flex flex-col gap-3 rounded-3xl bg-white dark:bg-slate-900/70 p-6 shadow-lg backdrop-blur">
+        <header className="flex flex-col gap-2 rounded-2xl bg-slate-900/70 p-5 backdrop-blur">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <h1 className="text-2xl font-bold bg-gradient-to-r from-pink-500 to-rose-500 bg-clip-text text-transparent">マッチングデモ</h1>
-              <p className="text-sm text-gray-600 dark:text-slate-300">
+              <h1 className="text-xl font-semibold text-white">マッチングデモ</h1>
+              <p className="text-sm text-slate-300">
                 プレゼンスをONにすると近くのリストに表示され、互いに承諾するとチャットが開きます。
               </p>
             </div>
@@ -732,7 +732,7 @@ export default function Page() {
                     setBanner(null);
                     requestWebSocketReconnect();
                   }}
-                  className="rounded-full border border-pink-400 dark:border-emerald-500/50 px-3 py-1 text-[11px] text-pink-600 dark:text-emerald-300 transition hover:bg-pink-100 dark:hover:bg-emerald-500/10"
+                  className="rounded-full border border-emerald-500/50 px-3 py-1 text-[11px] text-emerald-300 transition hover:bg-emerald-500/10"
                 >
                   再接続を試す
                 </button>
@@ -747,7 +747,7 @@ export default function Page() {
                     aria-label="検索範囲"
                     value={radiusKm}
                     onChange={(event) => setRadiusKm(Number(event.target.value))}
-                    className="rounded border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1 text-xs text-gray-900 dark:text-slate-100 focus:border-pink-500 focus:outline-none focus:ring-2 focus:ring-pink-500/30"
+                    className="rounded border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-100 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
                   >
                     {RADIUS_CHOICES.map((value) => (
                       <option key={value} value={value}>
@@ -817,11 +817,11 @@ export default function Page() {
 
         <section className="grid gap-5 md:grid-cols-3">
           <div className="space-y-5 md:col-span-2">
-            <div className="rounded-3xl border border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 p-6 shadow-lg">
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <h2 className="text-2xl font-bold text-gray-900 dark:text-white">プレゼンス状態</h2>
-                  <p className="text-sm text-gray-600 dark:text-slate-300">
+                  <h2 className="text-lg font-semibold text-white">プレゼンス状態</h2>
+                  <p className="text-sm text-slate-300">
                     プレゼンスをONにしている間はリストに表示されます。OFFにするとすぐに非表示になります。
                   </p>
                 </div>
@@ -829,10 +829,10 @@ export default function Page() {
                   onClick={() => handlePresenceToggle(!selfPresence)}
                   disabled={isPresenceLoading || !session?.location || !user}
                   className={cn(
-                    "rounded-full px-6 py-3 text-sm font-bold transition shadow-md",
+                    "rounded-full px-6 py-2 text-sm font-semibold transition",
                     selfPresence
-                      ? "bg-gradient-to-r from-green-500 to-emerald-500 text-white hover:from-green-600 hover:to-emerald-600 disabled:opacity-50"
-                      : "bg-gray-200 dark:bg-slate-800 text-gray-700 dark:text-slate-200 hover:bg-gray-300 dark:hover:bg-slate-700 disabled:opacity-50"
+                      ? "bg-emerald-500 text-slate-950 hover:bg-emerald-400 disabled:bg-emerald-500/70"
+                      : "bg-slate-800 text-slate-200 hover:bg-slate-700 disabled:bg-slate-800/60"
                   )}
                 >
                   {selfPresence ? "プレゼンス ON" : "プレゼンス OFF"}
@@ -1031,17 +1031,17 @@ function OnboardingModal({ open, presets, initial, onClose, onComplete }: Onboar
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 py-8 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4 py-8 backdrop-blur">
       <form
         onSubmit={handleSubmit}
-        className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-3xl bg-white dark:bg-slate-900 p-8 shadow-2xl"
+        className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-3xl border border-slate-800 bg-slate-900/90 p-6 text-slate-100 shadow-2xl"
       >
         <div className="flex items-center justify-between gap-4">
           <div>
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+            <h2 className="text-lg font-semibold text-white">
               {initial ? "プロフィールを更新" : "プロフィール設定"}
             </h2>
-            <p className="text-sm text-gray-600 dark:text-slate-300">
+            <p className="text-sm text-slate-300">
               デモで必要な最小限の情報です。データはローカルにのみ保存されます。
             </p>
           </div>
@@ -1055,7 +1055,7 @@ function OnboardingModal({ open, presets, initial, onClose, onComplete }: Onboar
         </div>
 
         <div className="mt-5 space-y-5 text-sm">
-          <label className="flex items-center gap-3 rounded-2xl border border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-900/70 px-5 py-4">
+          <label className="flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-900/70 px-4 py-3">
             <input
               type="checkbox"
               checked={ageConfirmed}
@@ -1066,19 +1066,19 @@ function OnboardingModal({ open, presets, initial, onClose, onComplete }: Onboar
           </label>
 
           <div className="space-y-2">
-            <label className="text-sm font-semibold text-gray-700 dark:text-slate-400">
+            <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">
               Nickname
             </label>
             <input
               value={nickname}
               onChange={(event) => setNickname(event.target.value)}
               placeholder="例: あや"
-              className="w-full rounded-xl border border-gray-300 dark:border-slate-800 bg-white dark:bg-slate-950 px-4 py-3 text-base text-gray-900 dark:text-slate-100 placeholder:text-gray-400 dark:placeholder:text-slate-500 focus:border-pink-500 focus:outline-none focus:ring-2 focus:ring-pink-500/30"
+              className="w-full rounded-xl border border-slate-800 bg-slate-950 px-4 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
             />
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-semibold text-gray-700 dark:text-slate-400">
+            <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">
               Tags (multiple)
             </label>
             <div className="flex flex-wrap gap-2">
@@ -1090,10 +1090,10 @@ function OnboardingModal({ open, presets, initial, onClose, onComplete }: Onboar
                     type="button"
                     onClick={() => toggleTag(tag)}
                     className={cn(
-                      "rounded-full border px-4 py-2 text-sm font-medium transition",
+                      "rounded-full border px-3 py-1 text-xs transition",
                       active
-                        ? "border-pink-400 bg-pink-500/20 text-pink-600 dark:text-pink-300"
-                        : "border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-gray-700 dark:text-slate-300 hover:border-pink-300 dark:hover:border-slate-500"
+                        ? "border-emerald-400 bg-emerald-500/20 text-emerald-200"
+                        : "border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-500"
                     )}
                   >
                     {tag}
@@ -1104,13 +1104,13 @@ function OnboardingModal({ open, presets, initial, onClose, onComplete }: Onboar
           </div>
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
-              <label className="text-sm font-semibold text-gray-700 dark:text-slate-400">
+              <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">
                 Desired vibe
               </label>
               <select
                 value={vibe}
                 onChange={(event) => setVibe(event.target.value)}
-                className="w-full rounded-xl border border-gray-300 dark:border-slate-800 bg-white dark:bg-slate-950 px-4 py-3 text-base text-gray-900 dark:text-slate-100 focus:border-pink-500 focus:outline-none focus:ring-2 focus:ring-pink-500/30"
+                className="w-full rounded-xl border border-slate-800 bg-slate-950 px-4 py-2 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
               >
                 <option value="">未設定</option>
                 {VIBE_OPTIONS.map((value) => (
@@ -1121,13 +1121,13 @@ function OnboardingModal({ open, presets, initial, onClose, onComplete }: Onboar
               </select>
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-semibold text-gray-700 dark:text-slate-400">
+              <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">
                 Budget per person
               </label>
               <select
                 value={budget}
                 onChange={(event) => setBudget(event.target.value)}
-                className="w-full rounded-xl border border-gray-300 dark:border-slate-800 bg-white dark:bg-slate-950 px-4 py-3 text-base text-gray-900 dark:text-slate-100 focus:border-pink-500 focus:outline-none focus:ring-2 focus:ring-pink-500/30"
+                className="w-full rounded-xl border border-slate-800 bg-slate-950 px-4 py-2 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
               >
                 <option value="">未設定</option>
                 {BUDGET_OPTIONS.map((value) => (
@@ -1140,7 +1140,7 @@ function OnboardingModal({ open, presets, initial, onClose, onComplete }: Onboar
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-semibold text-gray-700 dark:text-slate-400">
+            <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">
               Bio (optional)
             </label>
             <textarea
@@ -1148,7 +1148,7 @@ function OnboardingModal({ open, presets, initial, onClose, onComplete }: Onboar
               onChange={(event) => setBio(event.target.value)}
               rows={3}
               placeholder="Example: Exploring wine bars and open to sharing recommendations."
-              className="w-full rounded-xl border border-gray-300 dark:border-slate-800 bg-white dark:bg-slate-950 px-4 py-3 text-base text-gray-900 dark:text-slate-100 placeholder:text-gray-400 dark:placeholder:text-slate-500 focus:border-pink-500 focus:outline-none focus:ring-2 focus:ring-pink-500/30"
+              className="w-full rounded-xl border border-slate-800 bg-slate-950 px-4 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
             />
           </div>
 
@@ -1211,7 +1211,7 @@ function OnboardingModal({ open, presets, initial, onClose, onComplete }: Onboar
           <button
             type="submit"
             disabled={submitting}
-            className="rounded-full bg-gradient-to-r from-pink-500 to-rose-500 px-8 py-3 text-base font-bold text-white transition hover:from-pink-600 hover:to-rose-600 disabled:opacity-50 shadow-lg"
+            className="rounded-full bg-emerald-500 px-5 py-2 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400 disabled:bg-emerald-500/60"
           >
             {submitting ? "保存中..." : "保存して続ける"}
           </button>
@@ -1237,9 +1237,9 @@ function NearbyList({
   loading,
 }: NearbyListProps) {
   return (
-    <div className="rounded-3xl border border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 p-6 shadow-lg">
-      <div className="mb-4 flex items-center justify-between gap-2">
-        <h2 className="text-xl font-bold text-gray-900 dark:text-white">近くのユーザー</h2>
+    <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <h2 className="text-lg font-semibold text-white">近くのユーザー</h2>
         {loading && <span className="text-xs text-slate-400">更新中...</span>}
       </div>
       {items.length === 0 ? (
@@ -1255,13 +1255,13 @@ function NearbyList({
               <div
                 key={entry.user.id}
                 className={cn(
-                  "flex flex-col gap-4 rounded-2xl border border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-950/60 p-5 transition hover:shadow-md hover:border-pink-300 dark:hover:border-slate-700 cursor-pointer",
-                  isSelf && "border-pink-400 dark:border-emerald-500/60 bg-pink-50 dark:bg-emerald-500/10"
+                  "flex flex-col gap-3 rounded-2xl border border-slate-800 bg-slate-950/60 p-4 transition hover:border-slate-700",
+                  isSelf && "border-emerald-500/60 bg-emerald-500/10"
                 )}
               >
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <div className="text-lg font-bold text-gray-900 dark:text-white">{entry.user.nickname}</div>
+                    <div className="text-sm font-semibold text-white">{entry.user.nickname}</div>
                     <div className="text-xs text-slate-400" title={SCORE_TOOLTIP}>
                       {isSelf ? "あなた" : formatDistance(entry.distanceKm)} ・ スコア {Math.round(entry.affinityScore)}
                     </div>
@@ -1271,10 +1271,10 @@ function NearbyList({
                       onClick={() => onPropose(entry.user.id)}
                       disabled={Boolean(outgoing)}
                       className={cn(
-                        "rounded-full px-5 py-2 text-sm font-bold transition shadow-md",
+                        "rounded-full px-3 py-1 text-xs font-semibold transition",
                         outgoing
-                          ? "bg-gray-200 dark:bg-slate-800 text-gray-500 dark:text-slate-400 cursor-not-allowed"
-                          : "bg-gradient-to-r from-pink-500 to-rose-500 text-white hover:from-pink-600 hover:to-rose-600 hover:shadow-lg"
+                          ? "bg-slate-800 text-slate-400"
+                          : "bg-emerald-500 text-slate-950 hover:bg-emerald-400"
                       )}
                     >
                       {outgoing ? "送信済み" : "誘う"}
@@ -1286,7 +1286,7 @@ function NearbyList({
                     {entry.user.tags.map((tag) => (
                       <span
                         key={tag}
-                        className="rounded-full bg-pink-100 dark:bg-slate-800 px-3 py-1 text-pink-600 dark:text-slate-200 text-xs font-medium"
+                        className="rounded-full bg-slate-800 px-2 py-0.5 text-slate-200"
                       >
                         {tag}
                       </span>
@@ -1325,8 +1325,8 @@ function ProposalInbox({ incoming, outgoing, knownUsers, onAccept }: ProposalInb
   );
 
   return (
-    <div className="rounded-3xl border border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 p-6 shadow-lg">
-      <h2 className="mb-4 text-xl font-bold text-gray-900 dark:text-white">ミートアップ提案</h2>
+    <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
+      <h2 className="mb-3 text-lg font-semibold text-white">ミートアップ提案</h2>
       <div className="space-y-4 text-sm text-slate-200">
         <div>
           <div className="mb-2 flex items-center justify-between text-xs uppercase tracking-wide text-slate-400">
@@ -1342,7 +1342,7 @@ function ProposalInbox({ incoming, outgoing, knownUsers, onAccept }: ProposalInb
                 return (
                   <div
                     key={proposal.id}
-                    className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-950/60 px-4 py-3 hover:shadow-md transition"
+                    className="flex items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2"
                   >
                     <div>
                       <div className="text-sm font-semibold text-white">
@@ -1354,7 +1354,7 @@ function ProposalInbox({ incoming, outgoing, knownUsers, onAccept }: ProposalInb
                     </div>
                     <button
                       onClick={() => onAccept(proposal.id)}
-                      className="rounded-full bg-gradient-to-r from-pink-500 to-rose-500 px-5 py-2 text-sm font-bold text-white transition hover:from-pink-600 hover:to-rose-600 shadow-md"
+                      className="rounded-full bg-emerald-500 px-3 py-1 text-xs font-semibold text-slate-950 transition hover:bg-emerald-400"
                     >
                       Accept
                     </button>
@@ -1439,10 +1439,10 @@ function ChatPanel({ match, messages, selfUserId, peer, onSend, onClose, onRepor
   };
 
   return (
-    <div className="flex h-full flex-col rounded-3xl border border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 shadow-lg">
-        <div className="flex items-center justify-between gap-3 border-b border-gray-200 dark:border-slate-800 px-6 py-4">
+    <div className="flex h-full flex-col rounded-2xl border border-slate-800 bg-slate-900/60">
+      <div className="flex items-center justify-between gap-3 border-b border-slate-800 px-5 py-3">
         <div>
-          <h2 className="text-lg font-bold text-gray-900 dark:text-white">{peer?.nickname ?? "チャット"}</h2>
+          <h2 className="text-sm font-semibold text-white">{peer?.nickname ?? "チャット"}</h2>
           <p className="text-xs text-slate-400">
             {new Date(match.createdAt).toLocaleString()}
           </p>
@@ -1458,7 +1458,7 @@ function ChatPanel({ match, messages, selfUserId, peer, onSend, onClose, onRepor
           >閉じる</button>
         </div>
       </div>
-      <div ref={listRef} className="flex-1 space-y-3 overflow-y-auto px-6 py-4 text-sm">
+      <div ref={listRef} className="flex-1 space-y-3 overflow-y-auto px-5 py-4 text-sm">
         {messages.length === 0 ? (
           <p className="text-xs text-slate-500">まだメッセージはありません。</p>
         ) : (
@@ -1468,10 +1468,10 @@ function ChatPanel({ match, messages, selfUserId, peer, onSend, onClose, onRepor
               <div key={message.id} className={cn("flex", isSelf ? "justify-end" : "justify-start")}>
                 <div
                   className={cn(
-                    "max-w-[75%] rounded-2xl px-4 py-3 text-sm shadow-md",
+                    "max-w-[75%] rounded-2xl px-4 py-2 text-sm",
                     isSelf
-                      ? "bg-gradient-to-r from-pink-500 to-rose-500 text-white"
-                      : "bg-gray-100 dark:bg-slate-800 text-gray-900 dark:text-slate-100"
+                      ? "bg-emerald-500 text-slate-950"
+                      : "bg-slate-800 text-slate-100"
                   )}
                 >
                   <div>{message.text}</div>
@@ -1484,18 +1484,18 @@ function ChatPanel({ match, messages, selfUserId, peer, onSend, onClose, onRepor
           })
         )}
       </div>
-      <form onSubmit={handleSubmit} className="border-t border-gray-200 dark:border-slate-800 px-6 py-4">
+      <form onSubmit={handleSubmit} className="border-t border-slate-800 px-5 py-3">
         <div className="flex items-center gap-2">
           <input
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             placeholder="メッセージを入力..."
-            className="flex-1 rounded-xl border border-gray-300 dark:border-slate-800 bg-white dark:bg-slate-950 px-4 py-3 text-sm text-gray-900 dark:text-slate-100 placeholder:text-gray-400 dark:placeholder:text-slate-500 focus:border-pink-500 focus:outline-none focus:ring-2 focus:ring-pink-500/30"
+            className="flex-1 rounded-full border border-slate-800 bg-slate-950 px-4 py-2 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
           />
           <button
             type="submit"
             disabled={!draft.trim()}
-            className="rounded-full bg-gradient-to-r from-pink-500 to-rose-500 px-5 py-2 text-sm font-bold text-white transition hover:from-pink-600 hover:to-rose-600 disabled:opacity-50 shadow-md"
+            className="rounded-full bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400 disabled:bg-emerald-500/60"
           >送信</button>
         </div>
       </form>
